@@ -102,8 +102,44 @@ app.post('/login',async(req,res)=>{
     }
 })
 
+//task-3 -> create a route to get all products
+app.get('/products',async(req,res)=>{
+    try{
+        const products = await Product.find();
+        return res.status(200).json({
+        message:"Find all the products",
+        products:products
+        })
+    }catch(error){
+        console.log(error);
+        return res.status(500).json({message:'Internal server error'})
+    }
+})
 
+//task-4 -> create a route to add a product
+app.post('/add-product',async(req,res)=>{
+    try{
+        const {name,price,image,brand,stock,description} = req.body;
+        const {token} = req.headers;
 
+        const decodedToken = jwt.verify(token,'supersecret');
+        const user = await User.findOne({email:decodedToken.email});
+
+        await Product.create({
+            name,
+            price,
+            image,
+            brand,
+            stock,
+            description,
+            user:user._id
+        });
+        return res.status(201).json({message:'Product added successfully'});
+    }catch(error){
+        console.log(error);
+        return res.status(500).json({message:'Internal server error'})
+    }
+})
 const PORT = 8080;
 app.listen(PORT,()=>{
     console.log(`Server is connected to port ${PORT}`);
