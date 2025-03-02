@@ -7,6 +7,7 @@ const jwt = require('jsonwebtoken');
 const cors = require('cors');
 const morgan = require('morgan');
 const {Product} = require('./model/Product');
+const {Cart} = require('./model/Cart');
 
 
 //connecting to database
@@ -201,8 +202,9 @@ app.patch("/product/edit/:id", async (req, res) => {
         res.status(200).json({ message: "Product Updated Succesfully" });
       }
     } catch (error) {
-      res.status(400).json({
-        message: "Internal Server Error Occured While Updating Product",
+        console.log(error)
+      res.status(404).json({
+        message: "Internal Server Error Occured While Updating Product",error
       });
     }
   });
@@ -256,7 +258,130 @@ app.get('/product/search/:keyword',async(req,res)=>{
       }
 })
 
+//task-9 -> create a route for cart
+app.get('/cart',async(req,res)=>{
+    const {token} = req.headers;
+    const decodedToken = jwt.verify(token,'supersecret');
+    const user = await User.findOne({email:decodedToken.email}).populate({
+        path:'cart',
+        populate:{
+            path:'products',
+            model:'Product'
+        }
+    })
+    if(!user){
+        return res.status(200).json({message:'User not found'});
+    }
 
+    return res.status(200).json({cart:user.cart});
+})
+
+//task-10 -> create a route to add product in cart
+app.post("/cart/add", async (req, res) => {
+    const body = req.body;
+  
+    const productsArray = body.products;
+    let totalPrice = 0;
+  
+    try {
+      for (const item of productsArray) {
+        const product = await Product.findById(item);
+        if (product) {
+          totalPrice += product.price;
+        }
+      }
+  
+      const { token } = req.headers;
+      const decodedToken = jwt.verify(token, "supersecret");
+      const user = await User.findOne({ email: decodedToken.email });
+  
+      if (!user) {
+        return res.status(404).json({ message: "User Not Found" });
+      }
+  
+      let cart;
+      if (user.cart) {
+        cart = await Cart.findById(user.cart).populate("products");
+        const existingProductIds = cart.products.map((product) =>
+          product._id.toString()
+        );
+  
+        productsArray.forEach(async (productId) => {
+          if (!existingProductIds.includes(productId)) {
+            cart.products.push(productId);
+            const product = await Product.findById(productId);
+            totalPrice += product.price;
+          }
+        });
+  
+        cart.total = totalPrice;
+        await cart.save();
+      } else {
+        cart = new Cart({
+          products: productsArray,
+          total: totalPrice,
+        });
+  
+        await cart.save();
+        user.cart = cart._id;
+        await user.save();
+      }
+  
+      res.status(201).json({
+        message: "Cart Updated Successfully",
+        cart: cart,
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Error Adding to Cart", error });
+    }
+  });
+  
+  //task-11 -> delete product from cart
+  app.delete("/cart/product/delete", async (req, res) => {
+    const { productID } = req.body;
+    const { token } = req.headers;
+  
+    try {
+      const decodedToken = jwt.verify(token, "supersecret");
+      const user = await User.findOne({ email: decodedToken.email }).populate("cart");
+  
+      if (!user) {
+        return res.status(404).json({ message: "User Not Found" });
+      }
+  
+      const cart = await Cart.findById(user.cart).populate("products");
+  
+      if (!cart) {
+        return res.status(404).json({ message: "Cart Not Found" });
+      }
+  
+      const productIndex = cart.products.findIndex(
+        (product) => product._id.toString() === productID
+      );
+  
+      if (productIndex === -1) {
+        return res.status(404).json({ message: "Product Not Found in Cart" });
+      }
+  
+      cart.products.splice(productIndex, 1);
+      cart.total = cart.products.reduce(
+        (total, product) => total + product.price,
+        0
+      );
+  
+      await cart.save();
+  
+      res.status(200).json({
+        message: "Product Removed from Cart Successfully",
+        cart: cart,
+      });
+    } catch (error) {
+      res
+        .status(404)
+        .json({ message: "Error Removing Product from Cart", error });
+    }
+  });
+  
 
 const PORT = 8080;
 app.listen(PORT,()=>{
